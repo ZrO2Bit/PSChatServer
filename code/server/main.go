@@ -55,7 +55,7 @@ func handleConnection(conn net.Conn) {
 		fmt.Println(conn.RemoteAddr().String(), data)
 		res := strings.Split(data, "|")
 		if res[0] == "reg" {
-			sendmsg(conn, reguser(conn, res[1]))
+			sendmsg(conn, "ret|"+res[1]+"|"+reguser(conn, res[2]))
 		}
 		if res[0] == "msg" {
 			sendboard("msg|" + iptoid[conn.RemoteAddr().String()] + "|" + res[1])
