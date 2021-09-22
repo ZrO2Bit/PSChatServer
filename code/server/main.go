@@ -9,11 +9,20 @@ import (
 )
 
 var conns = make(map[string]net.Conn)
+var onlineusers = make(map[string]string)
+var iptoid = make(map[string]string)
 
-func sendboard(msg []byte) {
-	for _, conn := range conns {
-		conn.Write(msg)
+func sendboard(msg string) {
+	for _, addr := range onlineusers {
+		if addr != "" {
+			conn := conns[addr]
+			sendmsg(conn, msg)
+		}
 	}
+}
+
+func sendmsg(conn net.Conn, info string) (int, error) {
+	return conn.Write([]byte(info + "\n"))
 }
 
 func readstring(conn net.Conn) (string, error) {
@@ -24,15 +33,33 @@ func readstring(conn net.Conn) (string, error) {
 	return res, err
 }
 
+func reguser(conn net.Conn, userid string) string {
+	if id, ok := onlineusers[userid]; ok && id != "" {
+		return "error"
+	}
+	onlineusers[userid] = conn.RemoteAddr().String()
+	iptoid[conn.RemoteAddr().String()] = userid
+	return "success"
+
+}
+
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
 	for {
 		data, err := readstring(conn)
 		if err != nil {
+			onlineusers[iptoid[conn.RemoteAddr().String()]] = ""
 			break
 		}
-		fmt.Println(conn.RemoteAddr().String(), strings.Replace(data, "\n", "", -1))
-		sendboard([]byte(data))
+		data = strings.Replace(data, "\n", "", -1)
+		fmt.Println(conn.RemoteAddr().String(), data)
+		res := strings.Split(data, "|")
+		if res[0] == "reg" {
+			sendmsg(conn, reguser(conn, res[1]))
+		}
+		if res[0] == "msg" {
+			sendboard("msg|" + iptoid[conn.RemoteAddr().String()] + "|" + res[1])
+		}
 	}
 }
 
