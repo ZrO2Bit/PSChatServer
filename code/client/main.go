@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-var id string
+var id = ""
 var msgid int
 var msgs = make(map[int]string)
 var roomid string
@@ -203,20 +203,57 @@ func main() {
 
 	// 启动监听循环
 	go listen(conn)
-	// 注册id
+	// 登录流程
 	for {
-		fmt.Print("请输入您的userid:")
-		fmt.Scanln(&id)
-		id = strings.Replace(id, "\n", "", -1)
-		ret, err := sendreq(conn, "reg", strings.Replace(id, " ", "", -1))
-		res := strings.Split(ret, "|")
-		if err != nil {
-			break
+		fmt.Println("login id pwd登录系统")
+		fmt.Println("register id pwd name注册系统")
+		in := bufio.NewReader(os.Stdin)
+		data, _ = in.ReadString('\n')
+		data = strings.Replace(data, "|", "{{shu}}", -1)
+		data = strings.Replace(data, "\n", "", -1)
+		data = strings.Replace(data, "\r", "", -1)
+		res := strings.Split(data, " ")
+
+		if res[0] == "login" {
+			ret, err := sendreq(conn, "login", res[1]+"|"+res[2])
+			if err != nil {
+				panic(err)
+			}
+			r := strings.Split(ret, "|")
+			if r[2] == "success" {
+				id = res[1]
+				fmt.Println("登陆成功，您可以发送消息了，您的id:", id)
+			} else {
+				fmt.Println(r[2])
+			}
 		}
-		if res[2] == "success" {
+		if res[0] == "register" {
+			ret, err := sendreq(conn, "register", res[1]+"|"+res[2]+"|"+res[3])
+			if err != nil {
+				panic(err)
+			}
+			r := strings.Split(ret, "|")
+			if r[2] == "success" {
+				fmt.Println("注册成功，请登录")
+			} else {
+				fmt.Println(r[2])
+			}
+		}
+
+		// fmt.Scanln(&id)
+		// id = strings.Replace(id, "\n", "", -1)
+		// ret, err := sendreq(conn, "reg", strings.Replace(id, " ", "", -1))
+		// res := strings.Split(ret, "|")
+		// if err != nil {
+		// 	break
+		// }
+		// if res[2] == "success" {
+		// 	break
+		// } else {
+		// 	fmt.Print(ret, "请输入您的userid:")
+		// }
+		if id != "" {
 			break
-		} else {
-			fmt.Print(ret, "请输入您的userid:")
 		}
 	}
 	// 处理用户输入
@@ -262,10 +299,11 @@ func main() {
 					roomid = "0"
 				}
 				his := strings.Split(ret, "|")
-				fmt.Println("该房间中当前有:")
+				fmt.Print("该房间中当前有:")
 				for i := len(his) - 1; i >= 2; i-- {
 					fmt.Print(his[i] + ",")
 				}
+				fmt.Print("\n")
 			}
 
 		} else {

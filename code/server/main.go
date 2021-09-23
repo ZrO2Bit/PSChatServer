@@ -305,6 +305,50 @@ func handleConnection(conn net.Conn) {
 				addmsgrecord(res[1], iptoid[conn.RemoteAddr().String()], res[2])
 				sendtoroom("msg|"+iptoid[conn.RemoteAddr().String()]+"|"+res[2], res[1])
 			}
+			if res[0] == "register" {
+				// 注册用户
+				cnt, err := Db.Query("select count(*) from user where userid=?", res[2])
+				usercnt := 0
+				if err != nil {
+					fmt.Printf("query faied, error:[%v]", err.Error())
+					return
+				}
+				cnt.Next()
+				cnt.Scan(&usercnt)
+				fmt.Println("查询到用户数量", res[2], usercnt)
+				if usercnt == 0 {
+					_, err := Db.Exec("insert into user (userid,pwd,username) values(?,?,?)", res[2], res[3], res[4])
+					if err != nil {
+						fmt.Printf("data insert faied, error:[%v]", err.Error())
+						return
+					}
+					sendmsg(conn, "ret|"+res[1]+"|"+"success", aeskey)
+				} else {
+					sendmsg(conn, "ret|"+res[1]+"|"+"id已被占用", aeskey)
+				}
+			}
+			if res[0] == "login" {
+				// 登录用户
+				_, ok := onlineusers[res[2]]
+				if ok {
+					sendmsg(conn, "ret|"+res[1]+"|"+"当前用户已登录", aeskey)
+					continue
+				}
+				user, err := Db.Query("select userid,pwd from user where userid=?", res[2])
+				id, pwd := "", ""
+				if err != nil {
+					fmt.Printf("query faied, error:[%v]", err.Error())
+					return
+				}
+				user.Next()
+				e := user.Scan(&id, &pwd)
+				if e == nil && id == res[2] && pwd == res[3] {
+					reguser(conn, res[2])
+					sendmsg(conn, "ret|"+res[1]+"|"+"success", aeskey)
+				} else {
+					sendmsg(conn, "ret|"+res[1]+"|"+"用户名或密码有误", aeskey)
+				}
+			}
 			if res[0] == "changeroom" {
 				// 更换房间
 				roominfo, ok := rooms[res[2]]
