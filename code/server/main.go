@@ -199,6 +199,17 @@ func sendboard(msg string) {
 	}
 }
 
+// 指定用户广播
+func sendtouser(msg string, userid string) {
+	// 从在线用户中循环，向每个在线用户发布信息
+	userip, ok := onlineusers[userid]
+	if ok && userip != "" {
+		conn := conns[userip]
+		aeskey := aeskeys[conn.RemoteAddr().String()]
+		sendmsg(conn, msg, aeskey)
+	}
+}
+
 // 指定房间广播
 func sendtoroom(msg string, roomid string) {
 	// 从在线用户中循环，向每个在线用户发布信息
@@ -302,8 +313,20 @@ func handleConnection(conn net.Conn) {
 			}
 			if res[0] == "msg" {
 				// 发送消息
-				addmsgrecord(res[1], iptoid[conn.RemoteAddr().String()], res[2])
-				sendtoroom("msg|"+iptoid[conn.RemoteAddr().String()]+"|"+res[2], res[1])
+				if strings.HasPrefix(res[1], "to") {
+					touserstr := strings.Replace(res[1], "to", "", 1)
+					tousers := strings.Split(touserstr, "&")
+					for _, touser := range tousers {
+						_, ok := onlineusers[touser]
+						if ok {
+							sendtouser("msg|from"+iptoid[conn.RemoteAddr().String()]+"|"+res[2], touser)
+						}
+					}
+					addmsgrecord(res[1], iptoid[conn.RemoteAddr().String()], res[2])
+				} else {
+					addmsgrecord(res[1], iptoid[conn.RemoteAddr().String()], res[2])
+					sendtoroom("msg|"+iptoid[conn.RemoteAddr().String()]+"|"+res[2], res[1])
+				}
 			}
 			if res[0] == "register" {
 				// 注册用户
@@ -367,6 +390,33 @@ func handleConnection(conn net.Conn) {
 					retmsg = retmsg + "|" + j
 				}
 				sendmsg(conn, "ret|"+res[1]+retmsg, aeskey)
+
+			}
+			if res[0] == "touser" {
+				// 更换房间
+				uid, ok := onlineusers[res[2]]
+				if !ok || uid == "" {
+					sendmsg(conn, "ret|"+res[1]+"用户不在线", aeskey)
+					continue
+				}
+				chatroom := ""
+				if iptoid[conn.RemoteAddr().String()] > res[2] {
+					chatroom = "to" + res[2] + "&" + iptoid[conn.RemoteAddr().String()]
+				} else {
+					chatroom = "to" + iptoid[conn.RemoteAddr().String()] + "&" + res[2]
+				}
+				_, ok = rooms[chatroom]
+				if !ok {
+					rooms[chatroom] = []string{}
+				}
+				for i, j := range rooms[idbelong[iptoid[conn.RemoteAddr().String()]]] {
+					if j == iptoid[conn.RemoteAddr().String()] {
+						rooms[idbelong[iptoid[conn.RemoteAddr().String()]]] = append(rooms[idbelong[iptoid[conn.RemoteAddr().String()]]][:i], rooms[idbelong[iptoid[conn.RemoteAddr().String()]]][i+1:]...)
+					}
+				}
+				rooms[chatroom] = append(rooms[chatroom], iptoid[conn.RemoteAddr().String()])
+				idbelong[iptoid[conn.RemoteAddr().String()]] = chatroom
+				sendmsg(conn, "ret|"+res[1]+"|success", aeskey)
 
 			}
 			if res[0] == "gethistory" {

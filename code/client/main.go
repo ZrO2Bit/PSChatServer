@@ -150,8 +150,14 @@ func listen(conn net.Conn) {
 		}
 		if res[0] == "msg" {
 			// 如果消息头是消息，则显示出来
-			if res[1] != id {
-				fmt.Println(res[1], strings.Replace(res[2], "{{shu}}", "|", -1))
+			if strings.HasPrefix(res[1], "from") {
+				if strings.Replace(res[1], "from", "", 1) != id {
+					fmt.Println("来自"+strings.Replace(res[1], "from", "", 1)+"的私聊消息:", strings.Replace(res[2], "{{shu}}", "|", -1))
+				}
+			} else {
+				if res[1] != id {
+					fmt.Println("来自"+res[1]+"的消息:", strings.Replace(res[2], "{{shu}}", "|", -1))
+				}
 			}
 		}
 	}
@@ -239,19 +245,6 @@ func main() {
 				fmt.Println(r[2])
 			}
 		}
-
-		// fmt.Scanln(&id)
-		// id = strings.Replace(id, "\n", "", -1)
-		// ret, err := sendreq(conn, "reg", strings.Replace(id, " ", "", -1))
-		// res := strings.Split(ret, "|")
-		// if err != nil {
-		// 	break
-		// }
-		// if res[2] == "success" {
-		// 	break
-		// } else {
-		// 	fmt.Print(ret, "请输入您的userid:")
-		// }
 		if id != "" {
 			break
 		}
@@ -302,6 +295,25 @@ func main() {
 				fmt.Print("该房间中当前有:")
 				for i := len(his) - 1; i >= 2; i-- {
 					fmt.Print(his[i] + ",")
+				}
+				fmt.Print("\n")
+			}
+			if res[0] == "touser" {
+				// 更改房间
+				ret := ""
+				if len(res) > 1 {
+					ret, _ = sendreq(conn, "touser", res[1])
+					if id > res[1] {
+						roomid = "to" + res[1] + "&" + id
+					} else {
+						roomid = "to" + id + "&" + res[1]
+					}
+				}
+				his := strings.Split(ret, "|")
+				if his[2] == "success" {
+					fmt.Println("已切换到与" + res[1] + "的私人聊天")
+				} else {
+					fmt.Println(res[1] + his[2])
 				}
 				fmt.Print("\n")
 			}
