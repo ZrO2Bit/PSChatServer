@@ -149,6 +149,12 @@ var onlineusers = make(map[string]string)
 // 链接ip获取id
 var iptoid = make(map[string]string)
 
+// 房间信息
+var rooms = make(map[string][]string)
+
+// id归属房间
+var idbelong = make(map[string]string)
+
 // AES密钥池
 var aeskeys = make(map[string]string)
 
@@ -193,6 +199,22 @@ func sendboard(msg string) {
 	}
 }
 
+// 指定房间广播
+func sendtoroom(msg string, roomid string) {
+	// 从在线用户中循环，向每个在线用户发布信息
+	roomusers, ok := rooms[roomid]
+	if ok {
+		for _, id := range roomusers {
+			addr := onlineusers[id]
+			if addr != "" {
+				conn := conns[addr]
+				aeskey := aeskeys[conn.RemoteAddr().String()]
+				sendmsg(conn, msg, aeskey)
+			}
+		}
+	}
+}
+
 // 发送消息
 func sendmsg(conn net.Conn, info string, aeskey string) (int, error) {
 	// 对消息进行aes加密后base64，传输密文
@@ -225,6 +247,8 @@ func reguser(conn net.Conn, userid string) string {
 	if id, ok := onlineusers[userid]; ok && id != "" {
 		return "error"
 	}
+	rooms["0"] = append(rooms["0"], userid)
+	idbelong[userid] = "0"
 	onlineusers[userid] = conn.RemoteAddr().String()
 	iptoid[conn.RemoteAddr().String()] = userid
 	return "success"
@@ -241,6 +265,11 @@ func handleConnection(conn net.Conn) {
 		data, err := readstring(conn)
 		if err != nil {
 			onlineusers[iptoid[conn.RemoteAddr().String()]] = ""
+			for i, j := range rooms[idbelong[iptoid[conn.RemoteAddr().String()]]] {
+				if j == iptoid[conn.RemoteAddr().String()] {
+					rooms[idbelong[iptoid[conn.RemoteAddr().String()]]] = append(rooms[idbelong[iptoid[conn.RemoteAddr().String()]]][:i], rooms[idbelong[iptoid[conn.RemoteAddr().String()]]][i+1:]...)
+				}
+			}
 			break
 		}
 
@@ -273,8 +302,28 @@ func handleConnection(conn net.Conn) {
 			}
 			if res[0] == "msg" {
 				// 发送消息
-				addmsgrecord(itos(0), iptoid[conn.RemoteAddr().String()], res[1])
-				sendboard("msg|" + iptoid[conn.RemoteAddr().String()] + "|" + res[1])
+				addmsgrecord(res[1], iptoid[conn.RemoteAddr().String()], res[2])
+				sendtoroom("msg|"+iptoid[conn.RemoteAddr().String()]+"|"+res[2], res[1])
+			}
+			if res[0] == "changeroom" {
+				// 更换房间
+				roominfo, ok := rooms[res[2]]
+				if !ok {
+					rooms[res[2]] = []string{}
+				}
+				for i, j := range rooms[idbelong[iptoid[conn.RemoteAddr().String()]]] {
+					if j == iptoid[conn.RemoteAddr().String()] {
+						rooms[idbelong[iptoid[conn.RemoteAddr().String()]]] = append(rooms[idbelong[iptoid[conn.RemoteAddr().String()]]][:i], rooms[idbelong[iptoid[conn.RemoteAddr().String()]]][i+1:]...)
+					}
+				}
+				rooms[res[2]] = append(rooms[res[2]], iptoid[conn.RemoteAddr().String()])
+				idbelong[iptoid[conn.RemoteAddr().String()]] = res[2]
+				retmsg := ""
+				for _, j := range roominfo {
+					retmsg = retmsg + "|" + j
+				}
+				sendmsg(conn, "ret|"+res[1]+retmsg, aeskey)
+
 			}
 			if res[0] == "gethistory" {
 				// 查询历史
@@ -317,6 +366,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	rooms["0"] = []string{}
 	defer listener.Close()
 	for {
 		conn, err := listener.Accept()

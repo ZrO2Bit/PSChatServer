@@ -24,7 +24,7 @@ import (
 var id string
 var msgid int
 var msgs = make(map[int]string)
-var roomid int
+var roomid string
 var aeskey []byte
 
 // RSA加密
@@ -186,7 +186,7 @@ func main() {
 	}
 	defer conn.Close()
 	msgid = 0
-	roomid = 0
+	roomid = "0"
 	// 生成aeskey
 	aeskey = []byte(GetRandomString(16))
 	cipherText := base64.StdEncoding.EncodeToString(RSA_Encrypt(aeskey, "public.pem"))
@@ -225,7 +225,13 @@ func main() {
 		data, _ = in.ReadString('\n')
 		data = strings.Replace(data, "|", "{{shu}}", -1)
 		data = strings.Replace(data, "\n", "", -1)
-
+		data = strings.Replace(data, "\r", "", -1)
+		if data == "" {
+			continue
+		}
+		if data == "exit" {
+			break
+		}
 		if strings.HasPrefix(data, "&") {
 			// 处理指令输入
 			res := strings.Split(data, " ")
@@ -234,9 +240,9 @@ func main() {
 				// 历史查询指令
 				ret := ""
 				if len(res) > 1 {
-					ret, _ = sendreq(conn, "gethistory", "0"+"|"+res[1])
+					ret, _ = sendreq(conn, "gethistory", roomid+"|"+res[1])
 				} else {
-					ret, _ = sendreq(conn, "gethistory", "0|10")
+					ret, _ = sendreq(conn, "gethistory", roomid+"|10")
 				}
 				his := strings.Split(ret, "|")
 				nums := (len(his) - 2) / 3
@@ -245,9 +251,26 @@ func main() {
 					fmt.Println(his[i*3+2], his[i*3+3], his[i*3+4])
 				}
 			}
+			if res[0] == "changeroom" {
+				// 历史查询指令
+				ret := ""
+				if len(res) > 1 {
+					ret, _ = sendreq(conn, "changeroom", res[1])
+					roomid = res[1]
+				} else {
+					ret, _ = sendreq(conn, "changeroom", "0")
+					roomid = "0"
+				}
+				his := strings.Split(ret, "|")
+				fmt.Println("该房间中当前有:")
+				for i := len(his) - 1; i >= 2; i-- {
+					fmt.Print(his[i] + ",")
+				}
+			}
+
 		} else {
 			// 处理消息输入
-			_, err := sendmsg(conn, "msg|"+data+"\n")
+			_, err := sendmsg(conn, "msg|"+roomid+"|"+data+"\n")
 			if err != nil {
 				break
 			}
