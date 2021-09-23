@@ -252,7 +252,7 @@ func main() {
 				}
 			}
 			if res[0] == "changeroom" {
-				// 历史查询指令
+				// 更改房间
 				ret := ""
 				if len(res) > 1 {
 					ret, _ = sendreq(conn, "changeroom", res[1])
