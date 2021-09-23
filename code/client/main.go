@@ -146,7 +146,7 @@ func listen(conn net.Conn) {
 		if res[0] == "ret" {
 			// 如果消息头是返回值，则将数据填充至对应序列号的返回值
 			cnt, _ := strconv.ParseInt(res[1], 10, 64)
-			msgs[int(cnt)] = res[2]
+			msgs[int(cnt)] = data
 		}
 		if res[0] == "msg" {
 			// 如果消息头是消息，则显示出来
@@ -209,10 +209,11 @@ func main() {
 		fmt.Scanln(&id)
 		id = strings.Replace(id, "\n", "", -1)
 		ret, err := sendreq(conn, "reg", strings.Replace(id, " ", "", -1))
+		res := strings.Split(ret, "|")
 		if err != nil {
 			break
 		}
-		if ret == "success" {
+		if res[2] == "success" {
 			break
 		} else {
 			fmt.Print(ret, "请输入您的userid:")
@@ -220,11 +221,36 @@ func main() {
 	}
 	// 处理用户输入
 	for {
-		fmt.Scanln(&data)
+		in := bufio.NewReader(os.Stdin)
+		data, _ = in.ReadString('\n')
 		data = strings.Replace(data, "|", "{{shu}}", -1)
-		_, err := sendmsg(conn, "msg|"+data+"\n")
-		if err != nil {
-			break
+		data = strings.Replace(data, "\n", "", -1)
+
+		if strings.HasPrefix(data, "&") {
+			// 处理指令输入
+			res := strings.Split(data, " ")
+			res[0] = strings.Replace(res[0], "&", "", -1)
+			if res[0] == "gethistory" {
+				// 历史查询指令
+				ret := ""
+				if len(res) > 1 {
+					ret, _ = sendreq(conn, "gethistory", "0"+"|"+res[1])
+				} else {
+					ret, _ = sendreq(conn, "gethistory", "0|10")
+				}
+				his := strings.Split(ret, "|")
+				nums := (len(his) - 2) / 3
+				fmt.Println(nums)
+				for i := nums - 1; i >= 0; i-- {
+					fmt.Println(his[i*3+2], his[i*3+3], his[i*3+4])
+				}
+			}
+		} else {
+			// 处理消息输入
+			_, err := sendmsg(conn, "msg|"+data+"\n")
+			if err != nil {
+				break
+			}
 		}
 	}
 }

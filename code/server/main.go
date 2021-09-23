@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -262,6 +263,7 @@ func handleConnection(conn net.Conn) {
 			data = string(databyte)
 
 			data = strings.Replace(data, "\n", "", -1)
+			data = strings.Replace(data, "\r", "", -1)
 			fmt.Println(conn.RemoteAddr().String(), data)
 
 			res := strings.Split(data, "|")
@@ -273,6 +275,36 @@ func handleConnection(conn net.Conn) {
 				// 发送消息
 				addmsgrecord(itos(0), iptoid[conn.RemoteAddr().String()], res[1])
 				sendboard("msg|" + iptoid[conn.RemoteAddr().String()] + "|" + res[1])
+			}
+			if res[0] == "gethistory" {
+				// 查询历史
+				rows, err := Db.Query("select userid,content,timestamp from message where roomid=? ORDER BY timestamp DESC;", res[2])
+				var result = ""
+				if err != nil {
+					fmt.Printf("query faied, error:[%v]", err.Error())
+					return
+				}
+				var cnt = 0
+				maxcnt, _ := strconv.ParseInt(res[3], 10, 64)
+				fmt.Print("kkk", maxcnt)
+				for rows.Next() {
+					//定义变量接收查询数据
+					var userid, content, timestamp string
+
+					err := rows.Scan(&userid, &content, &timestamp)
+					if err != nil {
+						fmt.Printf("query faied, error:[%v]", err.Error())
+						break
+					}
+					if cnt >= int(maxcnt) {
+						break
+					}
+					cnt++
+					result = result + "|" + userid + "|" + content + "|" + timestamp
+				}
+				rows.Close()
+				fmt.Println("res", result)
+				sendmsg(conn, "ret|"+res[1]+result, aeskey)
 			}
 		}
 	}
