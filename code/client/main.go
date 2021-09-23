@@ -161,8 +161,9 @@ func listen(conn net.Conn) {
 func sendreq(conn net.Conn, opt string, msg string) (string, error) {
 	// 为请求分配序列号，同时等待返回值被填充
 	msgid++
-	msgs[msgid] = ""
-	strid := fmt.Sprintf("%d", msgid)
+	thisid := msgid
+	msgs[thisid] = ""
+	strid := fmt.Sprintf("%d", thisid)
 	_, err := sendmsg(conn, opt+"|"+strid+"|"+msg)
 	if err != nil {
 		return "", err
@@ -170,8 +171,8 @@ func sendreq(conn net.Conn, opt string, msg string) (string, error) {
 
 	// 循环等待请求返回
 	for i := 0; i < 1000; i++ {
-		if msgs[msgid] != "" {
-			return msgs[msgid], err
+		if msgs[thisid] != "" {
+			return msgs[thisid], err
 		}
 		time.Sleep(time.Duration(50) * time.Millisecond)
 	}
