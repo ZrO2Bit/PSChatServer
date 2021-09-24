@@ -26,6 +26,7 @@ var msgid int
 var msgs = make(map[int]string)
 var roomid string
 var aeskey []byte
+var relation = map[string]string{"0": "无关系", "1": "喜欢", "2": "拉黑"}
 
 // RSA加密
 func RSA_Encrypt(plainText []byte, path string) []byte {
@@ -285,6 +286,10 @@ func main() {
 				// 更改房间
 				ret := ""
 				if len(res) > 1 {
+					if strings.HasPrefix(res[1], "to") {
+						fmt.Println("不能切换至私人房")
+						continue
+					}
 					ret, _ = sendreq(conn, "changeroom", res[1])
 					roomid = res[1]
 				} else {
@@ -299,7 +304,7 @@ func main() {
 				fmt.Print("\n")
 			}
 			if res[0] == "touser" {
-				// 更改房间
+				// 切换至私人房
 				ret := ""
 				if len(res) > 1 {
 					ret, _ = sendreq(conn, "touser", res[1])
@@ -316,6 +321,49 @@ func main() {
 					fmt.Println(res[1] + his[2])
 				}
 				fmt.Print("\n")
+			}
+			if res[0] == "getrelation" {
+				// 查询关系
+				ret := ""
+				ret, _ = sendreq(conn, "getrelation", "")
+				his := strings.Split(ret, "|")
+				nums := (len(his) - 2) / 2
+				fmt.Println(nums)
+				for i := nums - 1; i >= 0; i-- {
+					fmt.Println(his[i*2+2], relation[his[i*2+3]])
+				}
+			}
+			if res[0] == "getreltome" {
+				// 查询对我的关系
+				ret := ""
+				ret, _ = sendreq(conn, "getreltome", "")
+				his := strings.Split(ret, "|")
+				nums := (len(his) - 2) / 2
+				fmt.Println(nums)
+				for i := nums - 1; i >= 0; i-- {
+					fmt.Println(his[i*2+2], relation[his[i*2+3]])
+				}
+			}
+			if res[0] == "like" {
+				// 喜欢/关注某人
+				ret := ""
+				ret, _ = sendreq(conn, "setstatus", res[1]+"|1")
+				his := strings.Split(ret, "|")
+				fmt.Println(his[2])
+			}
+			if res[0] == "black" {
+				// 拉黑某人
+				ret := ""
+				ret, _ = sendreq(conn, "setstatus", res[1]+"|2")
+				his := strings.Split(ret, "|")
+				fmt.Println(his[2])
+			}
+			if res[0] == "unblack" || res[0] == "unlike" {
+				// 取消关系
+				ret := ""
+				ret, _ = sendreq(conn, "setstatus", res[1]+"|0")
+				his := strings.Split(ret, "|")
+				fmt.Println(his[2])
 			}
 
 		} else {

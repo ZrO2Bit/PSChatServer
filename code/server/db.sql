@@ -10,3 +10,9 @@ CREATE TABLE `user` (
   `pwd` varchar(32) DEFAULT NULL,
   `username` text
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+
+CREATE TABLE `userrel` (
+  `targetuser` varchar(16) DEFAULT NULL,
+  `sourceuser` varchar(16) DEFAULT NULL,
+  `status` varchar(1) DEFAULT NULL
+) ENGINE=MyISAM DEFAULT CHARSET=utf8;

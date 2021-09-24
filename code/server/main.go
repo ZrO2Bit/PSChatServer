@@ -158,6 +158,9 @@ var idbelong = make(map[string]string)
 // AES密钥池
 var aeskeys = make(map[string]string)
 
+// 关系展示
+var relation = map[string]string{"0": "无关系", "1": "喜欢", "2": "拉黑"}
+
 // 数据库连接对象
 var Db *sqlx.DB
 
@@ -187,17 +190,17 @@ func itos(i int) string {
 	return strid
 }
 
-// 广播消息
-func sendboard(msg string) {
-	// 从在线用户中循环，向每个在线用户发布信息
-	for _, addr := range onlineusers {
-		if addr != "" {
-			conn := conns[addr]
-			aeskey := aeskeys[conn.RemoteAddr().String()]
-			sendmsg(conn, msg, aeskey)
-		}
-	}
-}
+// // 广播消息
+// func sendboard(msg string) {
+// 	// 从在线用户中循环，向每个在线用户发布信息
+// 	for _, addr := range onlineusers {
+// 		if addr != "" {
+// 			conn := conns[addr]
+// 			aeskey := aeskeys[conn.RemoteAddr().String()]
+// 			sendmsg(conn, msg, aeskey)
+// 		}
+// 	}
+// }
 
 // 指定用户广播
 func sendtouser(msg string, userid string) {
@@ -396,7 +399,7 @@ func handleConnection(conn net.Conn) {
 				// 更换房间
 				uid, ok := onlineusers[res[2]]
 				if !ok || uid == "" {
-					sendmsg(conn, "ret|"+res[1]+"用户不在线", aeskey)
+					sendmsg(conn, "ret|"+res[1]+"|用户不在线", aeskey)
 					continue
 				}
 				chatroom := ""
@@ -425,7 +428,7 @@ func handleConnection(conn net.Conn) {
 				var result = ""
 				if err != nil {
 					fmt.Printf("query faied, error:[%v]", err.Error())
-					return
+					continue
 				}
 				var cnt = 0
 				maxcnt, _ := strconv.ParseInt(res[3], 10, 64)
@@ -448,6 +451,94 @@ func handleConnection(conn net.Conn) {
 				rows.Close()
 				fmt.Println("res", result)
 				sendmsg(conn, "ret|"+res[1]+result, aeskey)
+			}
+			if res[0] == "getrelation" {
+				// 查询关系
+				rows, err := Db.Query("select targetuser,status from userrel where sourceuser=?;", iptoid[conn.RemoteAddr().String()])
+				var result = ""
+				if err != nil {
+					fmt.Printf("query faied, error:[%v]", err.Error())
+					continue
+				}
+				for rows.Next() {
+					//定义变量接收查询数据
+					var targetuser, status string
+
+					err := rows.Scan(&targetuser, &status)
+					if err != nil {
+						fmt.Printf("query faied, error:[%v]", err.Error())
+						break
+					}
+					if status != "0" {
+						result = result + "|" + targetuser + "|" + status
+					}
+				}
+				rows.Close()
+				fmt.Println("res", result)
+				sendmsg(conn, "ret|"+res[1]+result, aeskey)
+			}
+			if res[0] == "getreltome" {
+				// 查询对自己的关系
+				rows, err := Db.Query("select sourceuser,status from userrel where targetuser=?;", iptoid[conn.RemoteAddr().String()])
+				var result = ""
+				if err != nil {
+					fmt.Printf("query faied, error:[%v]", err.Error())
+					continue
+				}
+				for rows.Next() {
+					//定义变量接收查询数据
+					var sourceuser, status string
+
+					err := rows.Scan(&sourceuser, &status)
+					if err != nil {
+						fmt.Printf("query faied, error:[%v]", err.Error())
+						break
+					}
+					if status != "0" {
+						result = result + "|" + sourceuser + "|" + status
+					}
+				}
+				rows.Close()
+				fmt.Println("res", result)
+				sendmsg(conn, "ret|"+res[1]+result, aeskey)
+			}
+			if res[0] == "setstatus" {
+				// 更改关系
+				user, err := Db.Query("select userid from user where userid=?", res[2])
+				id := ""
+				if err != nil {
+					fmt.Printf("query faied, error:[%v]", err.Error())
+					return
+				}
+				user.Next()
+				e := user.Scan(&id)
+				if e != nil {
+					sendmsg(conn, "ret|"+res[1]+"|用户"+res[2]+"不存在", aeskey)
+					continue
+				}
+				rows, err := Db.Query("select status from userrel where sourceuser=? and targetuser=?;", iptoid[conn.RemoteAddr().String()], res[2])
+				if err != nil {
+					fmt.Printf("query faied, error:[%v]", err.Error())
+					continue
+				}
+				rows.Next()
+				var pre string
+				err = rows.Scan(&pre)
+				if err == nil {
+					_, err := Db.Exec("update userrel set status = ? where sourceuser=? and targetuser=?;", res[3], iptoid[conn.RemoteAddr().String()], res[2])
+					if err != nil {
+						fmt.Printf("query faied, error:[%v]", err.Error())
+						continue
+					}
+					sendmsg(conn, "ret|"+res[1]+"|与"+res[2]+"的关系从"+relation[pre]+"修改为"+relation[res[3]], aeskey)
+				} else {
+					_, err := Db.Exec("insert into userrel (targetuser,sourceuser,status) values(?,?,?)", res[2], iptoid[conn.RemoteAddr().String()], res[3])
+					if err != nil {
+						fmt.Printf("query faied, error:[%v]", err.Error())
+						continue
+					}
+					sendmsg(conn, "ret|"+res[1]+"|与"+res[2]+"的关系修改为"+relation[res[3]], aeskey)
+				}
 			}
 		}
 	}
