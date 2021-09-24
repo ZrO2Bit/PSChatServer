@@ -27,6 +27,11 @@ var msgs = make(map[int]string)
 var roomid string
 var aeskey []byte
 var relation = map[string]string{"0": "无关系", "1": "喜欢", "2": "拉黑"}
+var rcvmode = 0
+var onsendfile = ""
+var onrecvfilename = ""
+var onrecvfilesize = 0
+var onfileuser = ""
 
 // RSA加密
 func RSA_Encrypt(plainText []byte, path string) []byte {
@@ -108,6 +113,12 @@ func GetRandomString(l int) string {
 	return string(result)
 }
 
+// int转string
+func itos(i int) string {
+	strid := fmt.Sprintf("%d", i)
+	return strid
+}
+
 // 从连接读取一次数据并解密
 func readstring(conn net.Conn) (string, error) {
 	// 先进行base64解码后aes解密
@@ -118,7 +129,7 @@ func readstring(conn net.Conn) (string, error) {
 
 	bytesPass, err := base64.StdEncoding.DecodeString(res)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println(err, "1", string(res))
 		return "", err
 	}
 
@@ -136,29 +147,108 @@ func sendmsg(conn net.Conn, info string) (int, error) {
 
 // 监听消息循环
 func listen(conn net.Conn) {
-	for {
-		data, err := readstring(conn)
-		if err != nil {
-			break
-		}
-		data = strings.Replace(data, "\n", "", -1)
-		res := strings.Split(data, "|")
 
-		if res[0] == "ret" {
-			// 如果消息头是返回值，则将数据填充至对应序列号的返回值
-			cnt, _ := strconv.ParseInt(res[1], 10, 64)
-			msgs[int(cnt)] = data
-		}
-		if res[0] == "msg" {
-			// 如果消息头是消息，则显示出来
-			if strings.HasPrefix(res[1], "from") {
-				if strings.Replace(res[1], "from", "", 1) != id {
-					fmt.Println("来自"+strings.Replace(res[1], "from", "", 1)+"的私聊消息:", strings.Replace(res[2], "{{shu}}", "|", -1))
+	for {
+		if rcvmode == 0 {
+			data, err := readstring(conn)
+			if err != nil {
+				break
+			}
+			data = strings.Replace(data, "\n", "", -1)
+			res := strings.Split(data, "|")
+
+			if res[0] == "ret" {
+				// 如果消息头是返回值，则将数据填充至对应序列号的返回值
+				cnt, _ := strconv.ParseInt(res[1], 10, 64)
+				msgs[int(cnt)] = data
+			}
+			if res[0] == "file" {
+				// 如果消息头是文件信息，则询问是否接收文件
+				fmt.Println("收到来自" + res[1] + "的文件" + res[2] + ",大小为" + res[3])
+				onfileuser = res[1]
+				onrecvfilename = res[2]
+				onrecvfilesize, _ = strconv.Atoi(res[3])
+			}
+			if res[0] == "recvfile" {
+				fmt.Println("开始接收来自" + res[1] + "的文件" + res[2] + ",大小为" + res[3])
+				onrecvfilename = res[2]
+				onrecvfilesize, _ = strconv.Atoi(res[3])
+				onfileuser = res[1]
+				rcvmode = 3
+			}
+			if res[0] == "sendfile" {
+				fmt.Println("开始发送给" + res[1] + "的文件" + res[2] + ",大小为" + res[3])
+				sendmsg(conn, "gotosend")
+				fl, err := os.OpenFile(onsendfile, os.O_RDONLY, 0644)
+				if err != nil {
+					fmt.Println(err.Error())
 				}
-			} else {
-				if res[1] != id {
-					fmt.Println("来自"+res[1]+"的消息:", strings.Replace(res[2], "{{shu}}", "|", -1))
+				for {
+					filedata := make([]byte, 2048)
+					n, _ := fl.Read(filedata)
+					filedata = filedata[:n]
+					if n == 0 {
+						break
+					}
+					encbyte, _ := AesEncrypt(filedata, []byte(aeskey))
+					conn.Write(encbyte)
+					ret := make([]byte, 1024)
+					cnts, _ := conn.Read(ret)
+					ret = ret[:cnts]
+					ret, _ = AesDecrypt(ret, []byte(aeskey))
+					if string(ret) != "success\n" {
+						fmt.Println(string(ret))
+					}
 				}
+				encbyte, _ := AesEncrypt([]byte("end\n"), []byte(aeskey))
+				conn.Write(encbyte)
+				ret := make([]byte, 1024)
+				cnts, _ := conn.Read(ret)
+				ret = ret[:cnts]
+				ret, _ = AesDecrypt(ret, []byte(aeskey))
+				if string(ret) != "success\n" {
+					fmt.Println(string(ret))
+				}
+				fmt.Println("文件发送完毕")
+			}
+			if res[0] == "msg" {
+				// 如果消息头是消息，则显示出来
+				if strings.HasPrefix(res[1], "from") {
+					if strings.Replace(res[1], "from", "", 1) != id {
+						fmt.Println("来自"+strings.Replace(res[1], "from", "", 1)+"的私聊消息:", strings.Replace(res[2], "{{shu}}", "|", -1))
+					}
+				} else {
+					if res[1] != id {
+						fmt.Println("来自"+res[1]+"的消息:", strings.Replace(res[2], "{{shu}}", "|", -1))
+					}
+				}
+			}
+		} else if rcvmode == 3 {
+			encdata := make([]byte, 4096)
+			// fmt.Println(2, string("24"))
+			cnts, err := conn.Read(encdata)
+			if err != nil {
+				fmt.Println(err.Error())
+			}
+			encdata = encdata[:cnts]
+			// fmt.Println(2, cnts)
+			rewdata, _ := AesDecrypt(encdata, []byte(aeskey))
+			byts := []byte("success\n")
+			byts, _ = AesEncrypt(byts, []byte(aeskey))
+			conn.Write(byts)
+			if string(rewdata) == "end\n" {
+				rcvmode = 0
+				fmt.Println("文件接受完毕")
+				continue
+			}
+			fl, err := os.OpenFile(onrecvfilename, os.O_APPEND|os.O_CREATE, 0644)
+			if err != nil {
+				fmt.Println(err.Error())
+			}
+			n, err := fl.Write(rewdata)
+			fl.Close()
+			if err == nil && n < len(rewdata) {
+				fmt.Println(err.Error(), n)
 			}
 		}
 	}
@@ -364,6 +454,38 @@ func main() {
 				ret, _ = sendreq(conn, "setstatus", res[1]+"|0")
 				his := strings.Split(ret, "|")
 				fmt.Println(his[2])
+			}
+			if res[0] == "sendfile" {
+				if !strings.HasPrefix(roomid, "to") {
+					fmt.Println("你只可以在私人房间里发送文件")
+					continue
+				}
+				file, err := os.Open(res[1])
+				if err != nil {
+					fmt.Println(err)
+					continue
+				}
+				fileinfo, err := file.Stat()
+				if err != nil {
+					fmt.Println(err)
+					continue
+				}
+				filesize := fileinfo.Size()
+				filename := fileinfo.Name()
+				onsendfile = res[1]
+				file.Close()
+				ret, _ := sendreq(conn, "sendfile", filename+"|"+itos(int(filesize)))
+				his := strings.Split(ret, "|")
+				if his[0] == "success" {
+					fmt.Println("等待对方同意接收文件")
+				}
+			}
+			if res[0] == "recv" {
+				if onrecvfilename == "" {
+					fmt.Println("当前无等待接收的文件")
+					continue
+				}
+				sendmsg(conn, "recv|"+onrecvfilename+"|\n")
 			}
 
 		} else {
