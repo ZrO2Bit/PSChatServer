@@ -525,6 +525,7 @@ func handleConnection(conn net.Conn) {
 				}
 				if res[0] == "setstatus" {
 					// 更改关系
+					// 检查当前关系
 					user, err := Db.Query("select userid from user where userid=?", res[2])
 					id := ""
 					if err != nil {
@@ -537,6 +538,8 @@ func handleConnection(conn net.Conn) {
 						sendmsg(conn, "ret|"+res[1]+"|用户"+res[2]+"不存在", aeskey)
 						continue
 					}
+
+					// 修改关系
 					rows, err := Db.Query("select status from userrel where sourceuser=? and targetuser=?;", iptoid[conn.RemoteAddr().String()], res[2])
 					if err != nil {
 						fmt.Printf("query faied, error:[%v]", err.Error())
@@ -562,8 +565,11 @@ func handleConnection(conn net.Conn) {
 					}
 				}
 				if res[0] == "sendfile" {
+					// 处理发送文件请求
 					onsendfilename[conn.RemoteAddr().String()] = res[2]
 					onsendfilesize[conn.RemoteAddr().String()], _ = strconv.Atoi(res[3])
+
+					// 确认对方状态
 					if strings.HasPrefix(idbelong[iptoid[conn.RemoteAddr().String()]], "to") {
 						touserstr := strings.Replace(idbelong[iptoid[conn.RemoteAddr().String()]], "to", "", 1)
 						tousers := strings.Split(touserstr, "&")
@@ -584,6 +590,7 @@ func handleConnection(conn net.Conn) {
 					sendmsg(conn, "ret|"+res[1]+"|success", aeskey)
 				}
 				if res[0] == "recv" {
+					// 处理接收文件请求
 					if rcvmodes[rcvip[conn.RemoteAddr().String()]] != 0 {
 						sendmsg(conn, "msg|系统消息|"+iptoid[rcvip[conn.RemoteAddr().String()]]+"正忙,无法收到此消息", aeskey)
 						continue
@@ -595,23 +602,22 @@ func handleConnection(conn net.Conn) {
 					}
 					sendmsg(conn, "recvfile|"+iptoid[rcvip[conn.RemoteAddr().String()]]+"|"+flname+"|"+itos(flsize), aeskey)
 					sendtouser("sendfile|"+iptoid[conn.RemoteAddr().String()]+"|"+flname+"|"+itos(flsize), iptoid[rcvip[conn.RemoteAddr().String()]])
-					// rcvmodes[rcvip[conn.RemoteAddr().String()]] = 2
 					rcvmodes[conn.RemoteAddr().String()] = 3
 				}
 				if res[0] == "gotosend" {
+					// 处理状态变更请求
 					rcvmodes[conn.RemoteAddr().String()] = 2
 				}
 			}
 
 		} else if rcvmodes[conn.RemoteAddr().String()] == 2 {
+			// 发送文件则作为中转
 			encdata := make([]byte, 4096)
-			// fmt.Println(2, string("24"))
 			cnts, err := conn.Read(encdata)
 			if err != nil {
 				fmt.Println(err.Error())
 			}
 			encdata = encdata[:cnts]
-			// fmt.Println(2, cnts)
 			rewdata, _ := AesDecrypt(encdata, []byte(aeskey))
 			if string(rewdata) == "end\n" {
 				rcvmodes[conn.RemoteAddr().String()] = 0
@@ -621,12 +627,11 @@ func handleConnection(conn net.Conn) {
 			encdata, _ = AesEncrypt(rewdata, []byte(aeskeys[toip[conn.RemoteAddr().String()]]))
 			conns[toip[conn.RemoteAddr().String()]].Write(encdata)
 		} else if rcvmodes[conn.RemoteAddr().String()] == 3 {
+			// 中转确认消息
 			ret := make([]byte, 1024)
 			cnts, _ := conn.Read(ret)
 			ret = ret[:cnts]
-			// fmt.Println(ret, cnts)
 			ret, _ = AesDecrypt(ret, []byte(aeskey))
-			// fmt.Println(string(ret))
 			if string(ret) == "success\n" {
 				byts := []byte("success\n")
 				byts, _ = AesEncrypt(byts, []byte(aeskeys[rcvip[conn.RemoteAddr().String()]]))

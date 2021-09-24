@@ -164,19 +164,23 @@ func listen(conn net.Conn) {
 			}
 			if res[0] == "file" {
 				// 如果消息头是文件信息，则询问是否接收文件
-				fmt.Println("收到来自" + res[1] + "的文件" + res[2] + ",大小为" + res[3])
+				fmt.Println("收到来自"+res[1]+"的文件"+res[2]+",大小为"+res[3], "输入&recv开始接收")
 				onfileuser = res[1]
 				onrecvfilename = res[2]
 				onrecvfilesize, _ = strconv.Atoi(res[3])
 			}
 			if res[0] == "recvfile" {
+				// 接收文件
 				fmt.Println("开始接收来自" + res[1] + "的文件" + res[2] + ",大小为" + res[3])
 				onrecvfilename = res[2]
 				onrecvfilesize, _ = strconv.Atoi(res[3])
 				onfileuser = res[1]
+
+				// 进入接收文件状态
 				rcvmode = 3
 			}
 			if res[0] == "sendfile" {
+				// 发送文件
 				fmt.Println("开始发送给" + res[1] + "的文件" + res[2] + ",大小为" + res[3])
 				sendmsg(conn, "gotosend")
 				fl, err := os.OpenFile(onsendfile, os.O_RDONLY, 0644)
@@ -184,6 +188,7 @@ func listen(conn net.Conn) {
 					fmt.Println(err.Error())
 				}
 				for {
+					// 分块发送文件
 					filedata := make([]byte, 2048)
 					n, _ := fl.Read(filedata)
 					filedata = filedata[:n]
@@ -192,6 +197,8 @@ func listen(conn net.Conn) {
 					}
 					encbyte, _ := AesEncrypt(filedata, []byte(aeskey))
 					conn.Write(encbyte)
+
+					// 接收确认包
 					ret := make([]byte, 1024)
 					cnts, _ := conn.Read(ret)
 					ret = ret[:cnts]
@@ -200,8 +207,12 @@ func listen(conn net.Conn) {
 						fmt.Println(string(ret))
 					}
 				}
+
+				// 发送结束包
 				encbyte, _ := AesEncrypt([]byte("end\n"), []byte(aeskey))
 				conn.Write(encbyte)
+
+				// 接收确认包
 				ret := make([]byte, 1024)
 				cnts, _ := conn.Read(ret)
 				ret = ret[:cnts]
@@ -224,23 +235,28 @@ func listen(conn net.Conn) {
 				}
 			}
 		} else if rcvmode == 3 {
+			// 接收文件块
 			encdata := make([]byte, 4096)
-			// fmt.Println(2, string("24"))
 			cnts, err := conn.Read(encdata)
 			if err != nil {
 				fmt.Println(err.Error())
 			}
 			encdata = encdata[:cnts]
-			// fmt.Println(2, cnts)
 			rewdata, _ := AesDecrypt(encdata, []byte(aeskey))
+
+			// 发送确认包
 			byts := []byte("success\n")
 			byts, _ = AesEncrypt(byts, []byte(aeskey))
 			conn.Write(byts)
+
 			if string(rewdata) == "end\n" {
+				// 接收完毕
 				rcvmode = 0
 				fmt.Println("文件接受完毕")
 				continue
 			}
+
+			// 写入文件
 			fl, err := os.OpenFile(onrecvfilename, os.O_APPEND|os.O_CREATE, 0644)
 			if err != nil {
 				fmt.Println(err.Error())
@@ -312,6 +328,7 @@ func main() {
 		res := strings.Split(data, " ")
 
 		if res[0] == "login" {
+			// 登录
 			ret, err := sendreq(conn, "login", res[1]+"|"+res[2])
 			if err != nil {
 				panic(err)
@@ -325,6 +342,7 @@ func main() {
 			}
 		}
 		if res[0] == "register" {
+			// 注册
 			ret, err := sendreq(conn, "register", res[1]+"|"+res[2]+"|"+res[3])
 			if err != nil {
 				panic(err)
@@ -340,6 +358,16 @@ func main() {
 			break
 		}
 	}
+	fmt.Println("直接输入消息即发送")
+	fmt.Println("gethistory <nums=10> 获取nums条历史记录")
+	fmt.Println("changeroom <roomid=0> 进入roomid房间")
+	fmt.Println("touser <userid=0> 进入与userid私聊房间")
+	fmt.Println("getrelation 获取关注/拉黑列表")
+	fmt.Println("getreltome 获取被关注/拉黑列表")
+	fmt.Println("like id 关注某人")
+	fmt.Println("black id 拉黑某人")
+	fmt.Println("unblack/unlike id 取消拉黑/关注某人")
+	fmt.Println("sendfile path 发送文件,建议填写全路径")
 	// 处理用户输入
 	for {
 		in := bufio.NewReader(os.Stdin)
@@ -357,7 +385,7 @@ func main() {
 			// 处理指令输入
 			res := strings.Split(data, " ")
 			res[0] = strings.Replace(res[0], "&", "", -1)
-			if res[0] == "gethistory" {
+			if res[0] == "gethistory" || res[0] == "gh" {
 				// 历史查询指令
 				ret := ""
 				if len(res) > 1 {
@@ -369,10 +397,13 @@ func main() {
 				nums := (len(his) - 2) / 3
 				fmt.Println(nums)
 				for i := nums - 1; i >= 0; i-- {
-					fmt.Println(his[i*3+2], his[i*3+3], his[i*3+4])
+					ts, _ := strconv.ParseInt(his[i*3+4], 10, 64)
+					datetime := time.Unix(ts/1000, 0).Format("2006-01-02 15:04:05")
+					fmt.Println("来自" + his[i*3+2] + "于" + datetime + "发送的消息:")
+					fmt.Println(his[i*3+3])
 				}
 			}
-			if res[0] == "changeroom" {
+			if res[0] == "changeroom" || res[0] == "cr" {
 				// 更改房间
 				ret := ""
 				if len(res) > 1 {
@@ -393,7 +424,7 @@ func main() {
 				}
 				fmt.Print("\n")
 			}
-			if res[0] == "touser" {
+			if res[0] == "touser" || res[0] == "tu" {
 				// 切换至私人房
 				ret := ""
 				if len(res) > 1 {
@@ -412,7 +443,7 @@ func main() {
 				}
 				fmt.Print("\n")
 			}
-			if res[0] == "getrelation" {
+			if res[0] == "getrelation" || res[0] == "gr" {
 				// 查询关系
 				ret := ""
 				ret, _ = sendreq(conn, "getrelation", "")
@@ -423,7 +454,7 @@ func main() {
 					fmt.Println(his[i*2+2], relation[his[i*2+3]])
 				}
 			}
-			if res[0] == "getreltome" {
+			if res[0] == "getreltome" || res[0] == "gm" {
 				// 查询对我的关系
 				ret := ""
 				ret, _ = sendreq(conn, "getreltome", "")
@@ -434,30 +465,35 @@ func main() {
 					fmt.Println(his[i*2+2], relation[his[i*2+3]])
 				}
 			}
-			if res[0] == "like" {
+			if res[0] == "like" || res[0] == "lk" {
 				// 喜欢/关注某人
 				ret := ""
 				ret, _ = sendreq(conn, "setstatus", res[1]+"|1")
 				his := strings.Split(ret, "|")
 				fmt.Println(his[2])
 			}
-			if res[0] == "black" {
+			if res[0] == "black" || res[0] == "bl" {
 				// 拉黑某人
 				ret := ""
 				ret, _ = sendreq(conn, "setstatus", res[1]+"|2")
 				his := strings.Split(ret, "|")
 				fmt.Println(his[2])
 			}
-			if res[0] == "unblack" || res[0] == "unlike" {
+			if res[0] == "unblack" || res[0] == "unlike" || res[0] == "ub" || res[0] == "ul" {
 				// 取消关系
 				ret := ""
 				ret, _ = sendreq(conn, "setstatus", res[1]+"|0")
 				his := strings.Split(ret, "|")
 				fmt.Println(his[2])
 			}
-			if res[0] == "sendfile" {
+			if res[0] == "sendfile" || res[0] == "sf" {
+				// 提交文件发送申请
 				if !strings.HasPrefix(roomid, "to") {
 					fmt.Println("你只可以在私人房间里发送文件")
+					continue
+				}
+				if len(res) == 1 {
+					fmt.Println("请输入路径")
 					continue
 				}
 				file, err := os.Open(res[1])
@@ -481,6 +517,7 @@ func main() {
 				}
 			}
 			if res[0] == "recv" {
+				// 确认接收文件
 				if onrecvfilename == "" {
 					fmt.Println("当前无等待接收的文件")
 					continue
